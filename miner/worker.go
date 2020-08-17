@@ -961,8 +961,8 @@ func (w *worker) commitNewWork(interrupt *int32, noempty bool, timestamp int64) 
 		}
 	}
 
-
 	w.commit(uncles, w.fullTaskHook, true, tstart)
+
 
 }
 

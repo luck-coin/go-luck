@@ -296,6 +296,7 @@ func (d *Tppow) VerifySeal(chain consensus.ChainReader, header *types.Header) er
 
 	beta := d.calcBeta(header.Lucky, header.Basis)
 
+
 	if beta.Cmp(header.DifficultyBeta) != 0 {
 		return errInconsistence
 	}
@@ -326,6 +327,9 @@ func (d *Tppow) Prepare(chain consensus.ChainReader, header *types.Header) error
 	}
 	header.Basis, header.DifficultyAlpha = d.calcParam(chain, header.Number.Uint64(), header.Time, parent)
 		
+	//fmt.Printf("parent.Time=%v, parent.DifficultyAlpha=%v, parent.DifficultyBeta=%v, parent.Basis=%v\r\n ",
+	//	parent.Time, parent.DifficultyAlpha, parent.DifficultyBeta, parent.Basis, )
+
 	return nil
 }
 
@@ -393,6 +397,7 @@ func (d *Tppow) mine(block *types.Block, fn uint64, sn uint64, abort chan struct
 
 		currFirstNonce = fn
 	)
+	//header.DifficultyBeta = new(big.Int).Set(beta)
 
 search_luck:
 	for {
@@ -402,10 +407,13 @@ search_luck:
 			fmt.Printf("First nonce search aborted, firstNonce=%v\r\n", currFirstNonce)
 			//ethash.hashrate.Mark(attempts)
 			goto search_end
+			//break search
 		default:
 			currFirstNonce++
 
+
 			aHash := d.SealLuck(header, currFirstNonce)
+
 
 			if aHash.Cmp(header.DifficultyAlpha) < 0 {
 				firstNonce = currFirstNonce
@@ -417,7 +425,13 @@ search_luck:
 	header.Lucky = new(big.Int).Set(lucky)
 	header.FirstNonce = types.EncodeNonce(firstNonce)
 	header.DifficultyBeta = d.calcBeta(lucky, header.Basis)
+	//header.Difficulty = d.calcDifficulty(lucky)
 	header.Difficulty = d.calcDifficulty(header)
+
+	//fmt.Printf("header.difficultybeta=%v, lucky=%v\r\n", header.DifficultyBeta, lucky)
+
+	//fmt.Printf("header.Time=%v, header.DifficultyAlpha=%v, header.Lucky=%v, header.DifficultyBeta=%v, header.Basis=%v\r\n",
+	//	header.Time, header.DifficultyAlpha, header.Lucky, header.DifficultyBeta, header.Basis)
 
 search_block:	
 	for {
@@ -458,13 +472,16 @@ func (d *Tppow) SealLuck(header *types.Header, nonce uint64) (*big.Int) {
 		nonce,
 	})
 
+
 	hash := crypto.Argon2Hash(bs, header.ParentHash.Bytes()[22:])
 	res := new(big.Int).SetBytes(hash)
 	res = res.Div(res, HashScale)
+	//res = res.Div(res, header.DifficultyAlpha)
 	return res
 }
 
 func (d *Tppow) calcLuck(header *types.Header, nonce uint64) (*big.Int) {
+	//return big.NewInt(1000000)
 	bs, _ := rlp.EncodeToBytes([]interface{}{
 		header.ParentHash,
 		header.Coinbase,
@@ -472,6 +489,8 @@ func (d *Tppow) calcLuck(header *types.Header, nonce uint64) (*big.Int) {
 		header.Number,
 		nonce,
 	})
+
+	//fmt.Printf("222222 bytes=%v\r\n", header.ParentHash.Bytes()[20:])
 
 	hash := crypto.Argon2Hash(bs, header.ParentHash.Bytes()[20:])
 	res := new(big.Int).SetBytes(hash)
@@ -488,21 +507,27 @@ func (d *Tppow) SealBlock(header *types.Header, nonce uint64) (*big.Int) {
 		header.TxHash,
 		header.ReceiptHash,
 		header.Bloom,
+		//header.Difficulty,
 		header.Number,
 		header.GasLimit,
 		header.GasUsed,
 		header.Time,
 		header.Extra,
+		//header.Range,
 		header.Basis,
 		header.Lucky,
 		header.DifficultyAlpha,
 		header.DifficultyBeta,
+		//header.Difficulty,
 		nonce,
 	})
+
+	//fmt.Printf("333333 bytes=%v\r\n", header.ParentHash.Bytes()[22:])
 
 	hash := crypto.Argon2Hash(bs, header.ParentHash.Bytes()[22:])
 	res := new(big.Int).SetBytes(hash)
 	res = res.Div(res, HashScale)
+	//res = res.Div(res, header.DifficultyAlpha)
 	return res
 }
  
@@ -517,6 +542,7 @@ func (d *Tppow) SealHash(header *types.Header) (hash common.Hash) {
 		header.TxHash,
 		header.ReceiptHash,
 		header.Bloom,
+		//header.Difficulty,
 		header.Number,
 		header.GasLimit,
 		header.GasUsed,
@@ -548,6 +574,7 @@ func mineRewards(config *params.ChainConfig, state *state.StateDB, header *types
 	tmp := new(big.Int).Set(blockReward)
 	height := header.Number.Uint64()
 	divHeight := uint64(3110400)  // 2years = 2 * 360 * 24 * 60 * 3
+	//divHeight := uint64(11)
 	num := height / divHeight
 	if num > uint64(50) {
 		tmp = big.NewInt(0)
@@ -563,6 +590,17 @@ func mineRewards(config *params.ChainConfig, state *state.StateDB, header *types
 	authorReward.Mul(authorReward, big.NewInt(5))
 	authorReward.Div(authorReward, big.NewInt(100))
 
+	// r := new(big.Int)
+	// for _, uncle := range uncles {
+	// 	r.Add(uncle.Number, big8)
+	// 	r.Sub(r, header.Number)
+	// 	r.Mul(r, tmp)
+	// 	r.Div(r, big8)
+	// 	state.AddBalance(uncle.Coinbase, r)
+
+	// 	r.Div(tmp, big32)
+	// 	reward.Add(reward, r)
+	// }
 	state.AddBalance(header.Coinbase, reward)
 	state.AddBalance(params.AuthorRewardAddr, authorReward)
 }
@@ -577,13 +615,18 @@ func (d *Tppow) calcParam(chain consensus.ChainReader, number uint64, time uint6
 	dBeta = dBeta.Div(dBeta, big.NewInt(5))
 	basis := new(big.Int).Set(parent.Basis)
 
+	// maxBasis := new(big.Int).Set(parent.DifficultyAlpha)
+	// maxBasis = maxBasis.Div(maxBasis, big.NewInt(20))
+
 	// first basis, then alpha; the first difficulty is 5 times the second.
 	if dAlpha.Cmp(dBeta) < 0 {
 		basis = basis.Mul(basis, big.NewInt(96))
 		basis = basis.Div(basis, big.NewInt(100))
 	} else {
+		// if basis.Cmp(maxBasis) < 0 {
 		basis = basis.Mul(basis, big.NewInt(105))
 		basis = basis.Div(basis, big.NewInt(100))
+		// }
 	}
 
 	// generate a block per 20 seconds
@@ -591,6 +634,7 @@ func (d *Tppow) calcParam(chain consensus.ChainReader, number uint64, time uint6
 		alpha := new(big.Int).Set(dAlpha)
 		alpha = alpha.Mul(alpha, big.NewInt(110))
 		alpha = alpha.Div(alpha, big.NewInt(100))
+		//basis := parent.Basis
 		basis = basis.Mul(basis, big.NewInt(110))
 		basis = basis.Div(basis, big.NewInt(100))
 		return basis, alpha
@@ -619,6 +663,10 @@ func (d *Tppow) calcBeta(luck *big.Int, basis *big.Int) *big.Int {
 	return res
 }
 
+// func (d *Tppow) calcDifficulty(luck *big.Int) *big.Int {
+// 	res := new(big.Int).Set(luck);
+// 	return res;
+// }
 
 func (d *Tppow) calcDifficulty(h *types.Header) *big.Int {
 	height := h.Number.Uint64()

@@ -262,6 +262,7 @@ func zeroBytes(bytes []byte) {
 }
 
 func Argon2Hash(data []byte, salt []byte) ([]byte) {
+	//fmt.Printf("argon2d salt=%v\r\n", salt)
 	key := argon2.IDKey(data, salt, 1, 64 * 1024, 4, 32)
 	return key
 }
